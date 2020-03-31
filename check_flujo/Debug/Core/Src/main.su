@@ -1,0 +1,16 @@
+main.c:90:6:CASES_CHOICE	24	static
+main.c:110:6:COUNTER_CONSUMER	8	static
+main.c:114:6:TRANSMIT_WSSFM10R2AT	16	static
+main.c:120:10:CONFIG_CHANNEL_ADC	40	static
+main.c:134:10:GET_MEAS_BAT	16	static
+main.c:139:10:GET_MEAS_HALL	16	static
+main.c:144:6:WAKE_WSSFM10R2AT	8	static
+main.c:150:6:RESET_WSSFM10R2AT	8	static
+main.c:156:6:DATA_ASSIGMENT	32	static
+main.c:172:6:BUILD_DATA_TO_SEND	16	static
+main.c:185:5:main	24	static
+main.c:234:6:SystemClock_Config	112	static
+main.c:280:13:MX_ADC_Init	16	static
+main.c:341:13:MX_RTC_Init	72	static
+main.c:422:13:MX_GPIO_Init	48	static
+main.c:489:6:Error_Handler	8	static
