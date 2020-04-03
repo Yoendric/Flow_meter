@@ -56,12 +56,13 @@ void Error_Handler(void);
 /* USER CODE BEGIN EFP */
 void CASES_CHOICE(char* buff);
 void COUNTER_CONSUMER(void);
-void TRANSMIT_WSSFM10R2AT(void);
+void TRANSMIT_WSSFM10R2AT(char*,int);
 uint32_t CONFIG_CHANNEL_ADC(uint32_t);
 uint32_t GET_MEAS_BAT(void);
 uint32_t GET_MEAS_HALL(void);
 void WAKE_WSSFM10R2AT(void);
 void RESET_WSSFM10R2AT(void);
+void DEEP_SLEEP_WSSFM10R2AT(void);
 void DATA_ASSIGMENT(char*, uint16_t, uint8_t, uint8_t);
 void BUILD_DATA_TO_SEND(char*);
 /* USER CODE END EFP */

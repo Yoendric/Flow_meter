@@ -20,17 +20,18 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+
+/* Private includes ----------------------------------------------------------*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-/* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 typedef enum
 {
 	FALSE=0,
 	TRUE=1
 	}FLAG_T;
-#define SUM_THRD 100
+#define SUM_THRD 10
 #define DATA_LOCA	5
 #define VOLT_LOCA 9
 #define VERSION_LOCA 1
@@ -38,7 +39,7 @@ volatile uint8_t SUM_DEC;
 volatile uint8_t SUM_COUNTER;
 FLAG_T time_flag;
 #define version 0x01
-
+volatile uint32_t C=0;
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -58,6 +59,8 @@ FLAG_T time_flag;
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc;
 
+UART_HandleTypeDef hlpuart1;
+
 RTC_HandleTypeDef hrtc;
 
 /* USER CODE BEGIN PV */
@@ -69,40 +72,36 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_ADC_Init(void);
 static void MX_RTC_Init(void);
+static void MX_LPUART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
-
+void HAL_RTCEx_WAKEUpTimerEventCallback(RTC_HandleTypeDef *hrtc)
+{
+	UNUSED(hrtc);
+	time_flag = TRUE;
+}
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-//void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim2)
-//{
-// HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
-//}
 
-//void HAL_GPIO_EXTI_Callback(uint16_t GPIO_pin)
-//{
-//	if(__HAL_GPIO_EXTI_GET_FLAG(FREQ_LED_Pin)){
-//		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
-//	} /* USER CODE END EXTI4_15_IRQn 0 */
-//	HAL_GPIO_EXTI_IRQHandler(FREQ_LED_Pin);
-//}
 void CASES_CHOICE(char* buff)
 {
 	unsigned int instruction = 0;
-	if ((SUM_COUNTER == 0) || (time_flag == TRUE)) instruction = 1;
+	if ((SUM_COUNTER == 0) || (SUM_COUNTER > SUM_THRD) || (time_flag == TRUE)) instruction = 1;
     switch (instruction)
 	{
 		case 0:
 			break;
 		case 1:
-			if (SUM_COUNTER==0){
+			if ((SUM_COUNTER==0) || (SUM_COUNTER > SUM_THRD)){
 			   SUM_COUNTER = SUM_THRD;
 			}else{
 			   time_flag = FALSE;
 			}
 			BUILD_DATA_TO_SEND(buff);
-			TRANSMIT_WSSFM10R2AT();
+			WAKE_WSSFM10R2AT();
+			TRANSMIT_WSSFM10R2AT(buff,10);
+			DEEP_SLEEP_WSSFM10R2AT();
 			SUM_DEC=0;
 			break;
 	}
@@ -111,9 +110,18 @@ void COUNTER_CONSUMER(void){
 	SUM_DEC++;
 	SUM_COUNTER--;
 }
-void TRANSMIT_WSSFM10R2AT(void){
-	for(int i=0;i<4;i++){
-		HAL_GPIO_TogglePin(RST_WISOL_GPIO_Port, RST_WISOL_Pin);
+void TRANSMIT_WSSFM10R2AT(char * buff, int ArrayLength){
+	char AT_COMANDO[10];
+	sprintf(AT_COMANDO,"AT$RC\r\n");
+	HAL_UART_Transmit(&hlpuart1,(uint8_t*)AT_COMANDO,(uint16_t)strlen(AT_COMANDO),(uint32_t)100);
+	HAL_Delay(100);
+	sprintf(AT_COMANDO,"AT$SF=");
+	HAL_UART_Transmit(&hlpuart1,(uint8_t*)AT_COMANDO,(uint16_t)strlen(AT_COMANDO),(uint32_t)100);
+    HAL_UART_Transmit(&hlpuart1,(uint8_t*)buff,(uint16_t)ArrayLength,(uint32_t)100);
+    sprintf(AT_COMANDO,"\r\n");
+    HAL_UART_Transmit(&hlpuart1,(uint8_t*)AT_COMANDO,(uint16_t)strlen(AT_COMANDO),(uint32_t)100);
+	for(int i=0;i<10;i++){
+		HAL_GPIO_TogglePin(EN_VCC3V3s_GPIO_Port, EN_VCC3V3s_Pin);
 		HAL_Delay(200);
 	}
 }
@@ -144,14 +152,22 @@ uint32_t GET_MEAS_HALL(void){
 void WAKE_WSSFM10R2AT(void)
 {
 	HAL_GPIO_WritePin(WAKE_DS_WISOL_GPIO_Port, WAKE_DS_WISOL_Pin, GPIO_PIN_RESET);
-	HAL_Delay(500);
+	HAL_Delay(100);
 	HAL_GPIO_WritePin(WAKE_DS_WISOL_GPIO_Port, WAKE_DS_WISOL_Pin, GPIO_PIN_SET);
+	HAL_Delay(500);  // Wait for the wisol to be prepared
 }
 void RESET_WSSFM10R2AT(void)
 {
 	HAL_GPIO_WritePin(RST_WISOL_GPIO_Port, RST_WISOL_Pin, GPIO_PIN_RESET);
 	HAL_Delay(500);
 	HAL_GPIO_WritePin(RST_WISOL_GPIO_Port, RST_WISOL_Pin, GPIO_PIN_SET);
+}
+void DEEP_SLEEP_WSSFM10R2AT(void)
+{
+	char AT[10];
+	sprintf(AT,"AT$P=2\r\n");
+	HAL_UART_Transmit(&hlpuart1,(uint8_t*)AT,(uint16_t)strlen(AT),(uint32_t)100);
+	HAL_Delay(100);
 }
 void DATA_ASSIGMENT(char* buff,uint16_t s,uint8_t loc,uint8_t t)
 {
@@ -171,7 +187,7 @@ void DATA_ASSIGMENT(char* buff,uint16_t s,uint8_t loc,uint8_t t)
 }
 void BUILD_DATA_TO_SEND(char* buff)
 {
-	memset(buff,'\0',10); //Clear memory variable
+	memset(buff,'0',10); //Clear memory variable
 	DATA_ASSIGMENT(buff,GET_MEAS_BAT(),VOLT_LOCA,16);
 	DATA_ASSIGMENT(buff,SUM_DEC,DATA_LOCA,16);
 	DATA_ASSIGMENT(buff,version,VERSION_LOCA,16);
@@ -185,10 +201,10 @@ void BUILD_DATA_TO_SEND(char* buff)
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-  uint32_t raw_bat;
   char data_buff[10];
   SUM_DEC=0;
   /* USER CODE END 1 */
+  
 
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -210,19 +226,20 @@ int main(void)
   MX_GPIO_Init();
   MX_ADC_Init();
   MX_RTC_Init();
+  MX_LPUART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  SUM_COUNTER=SUM_THRD;
+  SUM_COUNTER=0;
   HAL_Delay(2000);
   /* USER CODE END 2 */
+
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
     {
-      /* USER CODE END WHILE */
+    /* USER CODE END WHILE */
   	  CASES_CHOICE(data_buff);
-  	  HAL_Delay(5000);
-  	  memset(data_buff,'\0',10);
-      /* USER CODE BEGIN 3 */
+  	  HAL_Delay(400);
+    /* USER CODE BEGIN 3 */
     }
   /* USER CODE END 3 */
 }
@@ -264,7 +281,8 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_LPUART1|RCC_PERIPHCLK_RTC;
+  PeriphClkInit.Lpuart1ClockSelection = RCC_LPUART1CLKSOURCE_PCLK1;
   PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
@@ -334,6 +352,40 @@ static void MX_ADC_Init(void)
 }
 
 /**
+  * @brief LPUART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_LPUART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN LPUART1_Init 0 */
+
+  /* USER CODE END LPUART1_Init 0 */
+
+  /* USER CODE BEGIN LPUART1_Init 1 */
+
+  /* USER CODE END LPUART1_Init 1 */
+  hlpuart1.Instance = LPUART1;
+  hlpuart1.Init.BaudRate = 9600;
+  hlpuart1.Init.WordLength = UART_WORDLENGTH_8B;
+  hlpuart1.Init.StopBits = UART_STOPBITS_1;
+  hlpuart1.Init.Parity = UART_PARITY_NONE;
+  hlpuart1.Init.Mode = UART_MODE_TX_RX;
+  hlpuart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  hlpuart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  hlpuart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&hlpuart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN LPUART1_Init 2 */
+
+  /* USER CODE END LPUART1_Init 2 */
+
+}
+
+/**
   * @brief RTC Initialization Function
   * @param None
   * @retval None
@@ -347,7 +399,6 @@ static void MX_RTC_Init(void)
 
   RTC_TimeTypeDef sTime = {0};
   RTC_DateTypeDef sDate = {0};
-  RTC_AlarmTypeDef sAlarm = {0};
 
   /* USER CODE BEGIN RTC_Init 1 */
 
@@ -391,20 +442,9 @@ static void MX_RTC_Init(void)
   {
     Error_Handler();
   }
-  /** Enable the Alarm A 
+  /** Enable the WakeUp 
   */
-  sAlarm.AlarmTime.Hours = 0x0;
-  sAlarm.AlarmTime.Minutes = 0x0;
-  sAlarm.AlarmTime.Seconds = 0x0;
-  sAlarm.AlarmTime.SubSeconds = 0x0;
-  sAlarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
-  sAlarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
-  sAlarm.AlarmMask = RTC_ALARMMASK_NONE;
-  sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
-  sAlarm.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
-  sAlarm.AlarmDateWeekDay = 0x1;
-  sAlarm.Alarm = RTC_ALARM_A;
-  if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BCD) != HAL_OK)
+  if (HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, 60, RTC_WAKEUPCLOCK_CK_SPRE_16BITS) != HAL_OK)
   {
     Error_Handler();
   }
@@ -442,17 +482,16 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(HALL_SENS_IRQ_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PA2 */
-  GPIO_InitStruct.Pin = GPIO_PIN_2;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  GPIO_InitStruct.Alternate = GPIO_AF6_LPUART1;
+  /*Configure GPIO pins : EN_BAT_MEAS_Pin EN_VCC3V3s_Pin */
+  GPIO_InitStruct.Pin = EN_BAT_MEAS_Pin|EN_VCC3V3s_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : EN_BAT_MEAS_Pin WAKE_DS_WISOL_Pin RST_WISOL_Pin EN_VCC3V3s_Pin */
-  GPIO_InitStruct.Pin = EN_BAT_MEAS_Pin|WAKE_DS_WISOL_Pin|RST_WISOL_Pin|EN_VCC3V3s_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  /*Configure GPIO pins : WAKE_DS_WISOL_Pin RST_WISOL_Pin */
+  GPIO_InitStruct.Pin = WAKE_DS_WISOL_Pin|RST_WISOL_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
@@ -463,14 +502,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PB7 */
-  GPIO_InitStruct.Pin = GPIO_PIN_7;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  GPIO_InitStruct.Alternate = GPIO_AF6_LPUART1;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI0_1_IRQn, 0, 0);
