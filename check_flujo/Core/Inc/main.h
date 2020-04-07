@@ -65,6 +65,7 @@ void RESET_WSSFM10R2AT(void);
 void DEEP_SLEEP_WSSFM10R2AT(void);
 void DATA_ASSIGMENT(char*, uint16_t, uint8_t, uint8_t);
 void BUILD_DATA_TO_SEND(char*);
+void LowPowerConfig(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/

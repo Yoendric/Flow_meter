@@ -22,10 +22,10 @@
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-/* USER CODE BEGIN Includes */
 typedef enum
 {
 	FALSE=0,
@@ -35,11 +35,14 @@ typedef enum
 #define DATA_LOCA	5
 #define VOLT_LOCA 9
 #define VERSION_LOCA 1
+#define HOUR_EVERY_MSG 6
+volatile uint8_t SUM_HOUR;
 volatile uint8_t SUM_DEC;
 volatile uint8_t SUM_COUNTER;
 FLAG_T time_flag;
 #define version 0x01
 volatile uint32_t C=0;
+uint8_t aShowTime[] = "hh:ms:ss";
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -74,10 +77,40 @@ static void MX_ADC_Init(void);
 static void MX_RTC_Init(void);
 static void MX_LPUART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
+void LowPowerConfig(void)
+{
+	__HAL_RCC_PWR_CLK_ENABLE(); // Enable Power Control clock
+	HAL_PWREx_EnableUltraLowPower(); // Ultra low power mode
+	HAL_PWREx_EnableFastWakeUp(); // Fast wake-up for ultra low power mode
+	HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
+}
 void HAL_RTCEx_WAKEUpTimerEventCallback(RTC_HandleTypeDef *hrtc)
 {
-	UNUSED(hrtc);
+	__HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
 	time_flag = TRUE;
+	//HAL_GPIO_TogglePin(EN_VCC3V3s_GPIO_Port, EN_VCC3V3s_Pin);
+}
+void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)
+{
+  /* Turn LED2 on: Alarm generation */
+  if (SUM_HOUR == HOUR_EVERY_MSG-1){
+	 time_flag = TRUE;
+	 SUM_HOUR = 0;
+  }else{
+	 SUM_HOUR++;
+  }
+}
+static void RTC_TimeShow(uint8_t* showtime)
+{
+  RTC_DateTypeDef sdatestructureget;
+  RTC_TimeTypeDef stimestructureget;
+
+  /* Get the RTC current Time */
+  HAL_RTC_GetTime(&hrtc, &stimestructureget, RTC_FORMAT_BIN);
+  /* Get the RTC current Date */
+  HAL_RTC_GetDate(&hrtc, &sdatestructureget, RTC_FORMAT_BIN);
+  /* Display time Format : hh:mm:ss */
+  sprintf((char*)showtime,"%02d:%02d:%02d",stimestructureget.Hours, stimestructureget.Minutes, stimestructureget.Seconds);
 }
 /* USER CODE END PFP */
 
@@ -93,6 +126,9 @@ void CASES_CHOICE(char* buff)
 		case 0:
 			break;
 		case 1:
+			//SystemClock_Config();
+			//MX_LPUART1_UART_Init();
+			HAL_Delay(30);
 			if ((SUM_COUNTER==0) || (SUM_COUNTER > SUM_THRD)){
 			   SUM_COUNTER = SUM_THRD;
 			}else{
@@ -103,6 +139,7 @@ void CASES_CHOICE(char* buff)
 			TRANSMIT_WSSFM10R2AT(buff,10);
 			DEEP_SLEEP_WSSFM10R2AT();
 			SUM_DEC=0;
+			//LowPowerConfig();
 			break;
 	}
 }
@@ -141,12 +178,18 @@ uint32_t CONFIG_CHANNEL_ADC(uint32_t channel){
 }
 uint32_t GET_MEAS_BAT(void){
 	uint32_t bat;
+	HAL_GPIO_WritePin(GPIOA, EN_BAT_MEAS_Pin, GPIO_PIN_SET);
+	HAL_Delay(50);
 	bat = CONFIG_CHANNEL_ADC(ADC_CHANNEL_1)*6600/4095;
+	HAL_GPIO_WritePin(GPIOA, EN_BAT_MEAS_Pin, GPIO_PIN_RESET);
 	return bat;
 }
 uint32_t GET_MEAS_HALL(void){
 	uint32_t hall;
+	HAL_GPIO_WritePin(GPIOA, EN_VCC3V3s_Pin, GPIO_PIN_SET);
+	HAL_Delay(50);
 	hall = CONFIG_CHANNEL_ADC(ADC_CHANNEL_3)*3300/4095;
+	HAL_GPIO_WritePin(GPIOA, EN_VCC3V3s_Pin, GPIO_PIN_RESET);
 	return hall;
 }
 void WAKE_WSSFM10R2AT(void)
@@ -203,6 +246,7 @@ int main(void)
   /* USER CODE BEGIN 1 */
   char data_buff[10];
   SUM_DEC=0;
+  SUM_HOUR=0;
   /* USER CODE END 1 */
   
 
@@ -237,8 +281,8 @@ int main(void)
   while (1)
     {
     /* USER CODE END WHILE */
-  	  CASES_CHOICE(data_buff);
-  	  HAL_Delay(400);
+	  RTC_TimeShow(aShowTime);
+	  CASES_CHOICE(data_buff);
     /* USER CODE BEGIN 3 */
     }
   /* USER CODE END 3 */
@@ -273,7 +317,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV2;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV16;
 
@@ -399,6 +443,7 @@ static void MX_RTC_Init(void)
 
   RTC_TimeTypeDef sTime = {0};
   RTC_DateTypeDef sDate = {0};
+  RTC_AlarmTypeDef sAlarm = {0};
 
   /* USER CODE BEGIN RTC_Init 1 */
 
@@ -442,9 +487,20 @@ static void MX_RTC_Init(void)
   {
     Error_Handler();
   }
-  /** Enable the WakeUp 
+  /** Enable the Alarm A 
   */
-  if (HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, 60, RTC_WAKEUPCLOCK_CK_SPRE_16BITS) != HAL_OK)
+  sAlarm.AlarmTime.Hours = 0x0;
+  sAlarm.AlarmTime.Minutes = 0x0;
+  sAlarm.AlarmTime.Seconds = 0x0;
+  sAlarm.AlarmTime.SubSeconds = 0x0;
+  sAlarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  sAlarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  sAlarm.AlarmMask = RTC_ALARMMASK_HOURS;
+  sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
+  sAlarm.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
+  sAlarm.AlarmDateWeekDay = 0x1;
+  sAlarm.Alarm = RTC_ALARM_A;
+  if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BCD) != HAL_OK)
   {
     Error_Handler();
   }
