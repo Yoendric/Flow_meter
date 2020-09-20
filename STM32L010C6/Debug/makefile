@@ -32,6 +32,9 @@ default.size.stdout \
 OBJDUMP_LIST += \
 STM32L010C6.list \
 
+OBJCOPY_BIN += \
+STM32L010C6.bin \
+
 
 # All Target
 all: STM32L010C6.elf secondary-outputs
@@ -52,12 +55,17 @@ STM32L010C6.list: $(EXECUTABLES)
 	@echo 'Finished building: $@'
 	@echo ' '
 
+STM32L010C6.bin: $(EXECUTABLES)
+	arm-none-eabi-objcopy  -O binary $(EXECUTABLES) "STM32L010C6.bin"
+	@echo 'Finished building: $@'
+	@echo ' '
+
 # Other Targets
 clean:
 	-$(RM) *
 	-@echo ' '
 
-secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST)
+secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST) $(OBJCOPY_BIN)
 
 .PHONY: all clean dependents
 .SECONDARY:
